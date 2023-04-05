@@ -48,7 +48,6 @@ def refreshCredentials(credentials):
 	return credentials
 
 liveChatID = ""
-message_ids = []
 def updateLiveChatID():
 	global liveChatID
 	
@@ -82,6 +81,8 @@ def updateLiveChatID():
 	# return latest stream if none are live
 	liveChatID = streams[0]['snippet']['liveChatId']
 
+message_ids = []
+removed_ids = []
 def getMessages():
 	request = youtube.liveChatMessages().list(
 		liveChatId = liveChatID,
@@ -90,21 +91,38 @@ def getMessages():
 	response = request.execute()
 
 	global message_ids
+	global removed_ids
 	messages = []
+	all_messages = []
 	for message in response["items"]:
-		if message["id"] not in message_ids:
+		if message["id"].replace(".", "") not in message_ids:
 			info = formatMessage(message)
 			messages.append({
 				"username": message['authorDetails']['displayName'],
 				"info": info,
 				"message": message['snippet']['displayMessage']
 				})
-			message_ids.append(message["id"])
+			message_ids.append(message["id"].replace(".", ""))
+		
+		all_messages.append(message["id"].replace(".", "")) # used to check for deleted messages
+	
+	# find any deleted messages
+	removed_ids = list(set(message_ids).difference(all_messages))
 	
 	return messages
 	
+def getRemoved():
+	messages = []
+	global message_ids
+	global removed_ids
+	for message in removed_ids:
+		messages.append({"info": "deleted", "message": message})
+		message_ids.remove(message)
+	removed_ids = []
+	return messages	
+
 def formatMessage(message):
-	# format youtube author details to twitch IRC
+	# format youtube author details to twitch IRC info
 	badges = ""
 	badge_info = True
 
@@ -128,12 +146,12 @@ def formatMessage(message):
 		"emotes": True,
 		"first-msg": "0",
 		"flags": True,
-		"id": message["id"],
+		"id": message["id"].replace(".", ""),
 		"mod": 1 if message["authorDetails"]["isChatModerator"] else 0,
 		"returning-chatter": "0",
 		"room-id": "133875470", # change?
 		"subscriber": "0", # update for memberships
-		"tmi-sent-ts": message["snippet"]["publishedAt"], # (epoch time) (find conversion)
+		"tmi-sent-ts": message["snippet"]["publishedAt"], # (change to epoch time?)
 		"turbo": "0",
 		"user-id": message["authorDetails"]["channelId"],
 		"user-type": True # need to implement mod user-type

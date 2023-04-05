@@ -8,9 +8,6 @@ import json
 
 import youtube
 
-def getMessages():
-	return youtube.getMessages()
-
 async def send(client, data):
 	await client.send(data)
 
@@ -19,14 +16,11 @@ async def handler(client, path):
 	clients.append(client)
 	while True:
 		try:
-			print("ping", client)
 			pong_waiter = await client.ping()
 			await pong_waiter
-			print("pong", client)
 			time.sleep(3)
 		except Exception as e:
 			clients.remove(client)
-			print("Websocket Client Disconnected", client)
 			break
 
 def broadcast(message):
@@ -53,10 +47,14 @@ while True:
 		youtube.updateLiveChatID()
 		new_id_counter = 0
 	
-	messages = getMessages()
-	print(messages)
+	messages = youtube.getMessages()
 	message_clients = clients.copy()
 	for message in messages:
+		print(message)
 		broadcast(json.dumps(message))
 
-
+	removed = youtube.getRemoved()
+	for message in removed:
+		print(message)
+		broadcast(json.dumps(message))
+	
