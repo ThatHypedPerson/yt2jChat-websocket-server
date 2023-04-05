@@ -4,33 +4,37 @@ import asyncio
 import websockets
 import threading
 import time
-import random
+import json
 
-def gen_data():
-    print("Generating data...")
-    time.sleep(3)
-    data = "test" + str(random.randint(1, 10))
-    
-    return data
+import youtube
+
+def getMessages():
+	return youtube.getMessages()
 
 async def send(client, data):
-    await client.send(data)
+	await client.send(data)
 
 async def handler(client, path):
-    # Register.
-    print("Websocket Client Connected.", client)
-    clients.append(client)
-    while True:
-        try:
-            print("ping", client)
-            pong_waiter = await client.ping()
-            await pong_waiter
-            print("pong", client)
-            time.sleep(3)
-        except Exception as e:
-            clients.remove(client)
-            print("Websocket Client Disconnected", client)
-            break
+	print("Websocket Client Connected.", client)
+	clients.append(client)
+	while True:
+		try:
+			print("ping", client)
+			pong_waiter = await client.ping()
+			await pong_waiter
+			print("pong", client)
+			time.sleep(3)
+		except Exception as e:
+			clients.remove(client)
+			print("Websocket Client Disconnected", client)
+			break
+
+def broadcast(message):
+	for client in message_clients:
+		try:
+			asyncio.run(send(client, message))
+		except:
+			pass
 
 clients = []
 start_server = websockets.serve(handler, "localhost", 8765)
@@ -40,14 +44,19 @@ threading.Thread(target = asyncio.get_event_loop().run_forever).start()
 
 print("Socket Server Running. Starting main loop.")
 
+new_id_counter = 0
 while True:
-    data = str(gen_data())
-    message_clients = clients.copy()
-    for client in message_clients:
-        print("Sending", data, "to", client)
-        try:
-            asyncio.run(send(client, data))
-        except:
-            # Clients might have disconnected during the messaging process,
-            # just ignore that, they will have been removed already.
-            pass
+	time.sleep(10)
+	
+	new_id_counter += 1
+	if new_id_counter == 6:
+		youtube.updateLiveChatID()
+		new_id_counter = 0
+	
+	messages = getMessages()
+	print(messages)
+	message_clients = clients.copy()
+	for message in messages:
+		broadcast(json.dumps(message))
+
+
