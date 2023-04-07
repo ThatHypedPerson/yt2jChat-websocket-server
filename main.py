@@ -31,7 +31,7 @@ def broadcast(message):
 			pass
 
 clients = []
-start_server = websockets.serve(handler, "localhost", 8765)
+start_server = websockets.serve(handler, "0.0.0.0", 8765)
 
 asyncio.get_event_loop().run_until_complete(start_server)
 threading.Thread(target = asyncio.get_event_loop().run_forever).start()
@@ -43,7 +43,7 @@ while True:
 	time.sleep(10)
 	
 	new_id_counter += 1
-	if new_id_counter == 6:
+	if new_id_counter == 60: # check for new stream every 10 minutes
 		youtube.updateLiveChatID()
 		new_id_counter = 0
 	

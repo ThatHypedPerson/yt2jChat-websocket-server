@@ -54,7 +54,8 @@ def updateLiveChatID():
 	request = youtube.liveBroadcasts().list(
 		part = "snippet,contentDetails,status",
 		broadcastStatus = "all",
-		broadcastType = "all"
+		broadcastType = "all",
+		maxResults = 50
 	)
 
 	streams = []
