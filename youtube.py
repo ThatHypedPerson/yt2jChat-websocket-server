@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pickle # store/read credentials
 
@@ -29,7 +30,7 @@ def getCredentials():
 			credentials = pickle.load(f)
 		if credentials is None:
 			print("Please supply a valid credentials.pkl")
-			quit()
+			sys.exit()
 		if credentials.expired:
 			credentials = refreshCredentials(credentials)
 	
@@ -38,7 +39,7 @@ def getCredentials():
 		with open('error.txt', "w") as f:
 			f.write(str(error))
 		print(error)
-		quit()
+		sys.exit()
 
 def refreshCredentials(credentials):
 	request = google.auth.transport.requests.Request()
@@ -71,20 +72,37 @@ def updateLiveChatID():
 	# give an empty value if there is no active stream
 	if len(streams) == 0:
 		liveChatID = ""
+		global read
+		read = False
 		return
 	
 	# get latest "active" livestream
 	for stream in streams:
 		if stream["status"]["lifeCycleStatus"] == "active":
 			liveChatID = stream['snippet']['liveChatId']
+			checkLive(stream)
 			return
 	
 	# return latest stream if none are live
 	liveChatID = streams[0]['snippet']['liveChatId']
+	checkLive(streams[0])
+
+read = False
+def checkLive(stream):
+	global read
+	if stream["status"]["lifeCycleStatus"] in ("ready", "live")\
+		and not stream["status"]["privacyStatus"] == "private":
+			read = True
+	else:
+		read = False
 
 message_ids = []
 removed_ids = []
 def getMessages():
+	global read
+	if not read:
+		print("skipping messages")
+		return
 	request = youtube.liveChatMessages().list(
 		liveChatId = liveChatID,
 		part = "snippet,authorDetails"

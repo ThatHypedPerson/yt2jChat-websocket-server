@@ -40,10 +40,10 @@ print("Socket Server Running. Starting main loop.")
 
 new_id_counter = 0
 while True:
-	time.sleep(10)
+	time.sleep(45) # "43.2 s/request" if running 24 hours to not reach quota
 	
 	new_id_counter += 1
-	if new_id_counter == 60: # check for new stream every 10 minutes
+	if new_id_counter == 13: # check for new stream ~ every 10 minutes
 		youtube.updateLiveChatID()
 		new_id_counter = 0
 	
