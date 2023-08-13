@@ -1,5 +1,9 @@
 import os
 import sys
+from dotenv import load_dotenv
+load_dotenv()
+
+import pytchat
 
 import pickle # store/read credentials
 
@@ -15,143 +19,124 @@ import google.auth.transport.requests
 # *DO NOT* leave this option enabled in production.
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+## YouTube API Requests
+api_service_name = "youtube"
+api_version = "v3"
+api_key = os.environ["api_key"]
+
+youtubeAPI = googleapiclient.discovery.build(
+	api_service_name, api_version, developerKey = api_key)
+
+## YouTube OAuth Requests
+scopes = ["https://www.googleapis.com/auth/youtube.readonly"]
 client_secrets_file = "client_secret.json"
 
-scopes = ["https://www.googleapis.com/auth/youtube.readonly"]
-
-# Get credentials and create an API client
 flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
 	client_secrets_file, scopes)
 
 def getCredentials():
-	global credentials
+	global youtubeOAuth
 	try:
 		with open('credentials.pkl', 'rb') as f:
 			credentials = pickle.load(f)
 		if credentials is None:
 			print("Please supply a valid credentials.pkl")
-			sys.exit()
-		if credentials.expired:
-			credentials = refreshCredentials(credentials)
+		else:
+			youtubeOAuth = googleapiclient.discovery.build(
+				"youtube", "v3", credentials=credentials)
 	
 	# basic error logging, too lazy to implement proper logging
 	except Exception as error:
 		with open('error.txt', "w") as f:
 			f.write(str(error))
 		print(error)
-		sys.exit()
 
-def refreshCredentials(credentials):
-	request = google.auth.transport.requests.Request()
-	credentials.refresh(request)
-	with open('credentials.pkl', 'wb') as f:
-		pickle.dump(credentials, f, pickle.HIGHEST_PROTOCOL)
-	return credentials
-
-liveChatID = ""
-def updateLiveChatID():
-	global liveChatID
-	
-	request = youtube.liveBroadcasts().list(
-		part = "snippet,contentDetails,status",
-		broadcastStatus = "all",
-		broadcastType = "all",
-		maxResults = 50
-	)
-
-	streams = []
-	while request is not None:
-		response = request.execute()
-		for item in response["items"]:
-			if item["status"]["lifeCycleStatus"] != "complete": # only look at active/soon to be active streams
-				streams.append(item)
-			elif item['snippet']['liveChatId'] == liveChatID:
-					clearCache()
-		request = youtube.playlistItems().list_next(request, response)
-	
-	# give an empty value if there is no active stream
-	if len(streams) == 0:
-		liveChatID = ""
-		global read
-		read = False
+chat = None
+def updateStreamID(url = None):
+	# skip checking for a new stream when given a url
+	if not url is None:
+		createChat(url)
 		return
 	
-	# get latest "active" livestream
-	for stream in streams:
-		if stream["status"]["lifeCycleStatus"] == "active":
-			liveChatID = stream['snippet']['liveChatId']
-			checkLive(stream)
-			return
-	
-	# return latest stream if none are live
-	liveChatID = streams[0]['snippet']['liveChatId']
-	checkLive(streams[0])
+	# OAuth Request (more accurate, usable by anyone)
+	try:
+		request = youtubeOAuth.liveBroadcasts().list(
+			part = "snippet,contentDetails,status",
+			broadcastStatus = "all",
+			broadcastType = "all",
+			maxResults = 50
+		)
 
-read = False
-def checkLive(stream):
-	global read
-	if stream["status"]["lifeCycleStatus"] in ("ready", "live")\
-		and not stream["status"]["privacyStatus"] == "private":
-			read = True
-	else:
-		read = False
-
-message_ids = []
-removed_ids = []
-def getMessages():
-	global read
-	if not read:
-		print("skipping messages")
-		return
-	request = youtube.liveChatMessages().list(
-		liveChatId = liveChatID,
-		part = "snippet,authorDetails"
-	)
-	response = request.execute()
-
-	global message_ids
-	global removed_ids
-	messages = []
-	all_messages = []
-	for message in response["items"]:
-		if message["id"].replace(".", "") not in message_ids:
-			info = formatMessage(message)
-			messages.append({
-				"username": message['authorDetails']['displayName'],
-				"info": info,
-				"message": message['snippet']['displayMessage']
-				})
-			message_ids.append(message["id"].replace(".", ""))
+		streams = []
+		while request is not None:
+			response = request.execute()
+			for item in response["items"]:
+				if item["status"]["lifeCycleStatus"] != "complete": # only look at active/soon to be active streams
+					streams.append(item)
+			request = youtubeOAuth.playlistItems().list_next(request, response)
 		
-		all_messages.append(message["id"].replace(".", "")) # used to check for deleted messages
+		# do nothing when there is no active stream
+		if len(streams) == 0:
+			return
+		
+		# get latest "active" livestream
+		for stream in streams:
+			if stream["status"]["lifeCycleStatus"] == "active":
+				streamID = stream['snippet']['thumbnails']['default']['url']
+				parseStreamID(streamID)
+				return
+		
+		# get latest stream if none are live
+		streamID = streams[0]['snippet']['thumbnails']['default']['url']
+		parseStreamID(streamID)
 	
-	# find any deleted messages
-	removed_ids = list(set(message_ids).difference(all_messages))
-	
-	return messages
-	
-def getRemoved():
-	messages = []
-	global message_ids
-	global removed_ids
-	for message in removed_ids:
-		messages.append({"info": "deleted", "message": message})
-		message_ids.remove(message)
-	removed_ids = []
-	return messages	
+	# API Request (only usable by me, the person who made this)
+	except:
+		# i'm lazy so just get the first result in the "streams" playlist
+		request = youtubeAPI.playlistItems().list(
+			part = "snippet",
+			maxResults = 1,
+			playlistId = "PLAWgoOAOTXvFT_H--Vnu0KrbPEgnpO8QG"
+		)
+		response = request.execute()
+		streamID = response["items"][0]['snippet']['thumbnails']['default']['url']
+		parseStreamID(streamID)
+
+def parseStreamID(url):
+	streamID = url[23:url.find("/", 23)] # could hardcode but nah
+	createChat(streamID)
+
+def createChat(url):
+	global chat
+	if chat:
+		chat.terminate()
+	print("updating chat to:", url)
+	chat = pytchat.create(video_id=url, interruptable=False)
+
+def processMessage(message):
+	# include messageEx to add emotes
+	info = formatMessage(message)
+	processed = {
+		"username": message.author.name,
+		"info": info,
+		"message": message.message
+	}
+	return processed
 
 def formatMessage(message):
 	# format youtube author details to twitch IRC info
 	badges = ""
 	badge_info = True
 
-	if message['authorDetails']['isChatOwner']:
+	# include badgeUrl later
+
+	if message.author.isChatOwner:
 		badges += "broadcaster/1"
-	if message['authorDetails']['isChatModerator']:
+	if message.author.isChatModerator:
 		badges += "moderator/1"
-	if message['authorDetails']['isChatSponsor']:
+	if message.author.isVerified:
 		badges += "partner/1"
-	if message['authorDetails']['isVerified']: # expand when memberships are enabled
+	if message.author.isChatSponsor: # test/expand when memberships are enabled
 		badges += "subscriber/0"
 	if badges == "":
 		badges = True
@@ -161,28 +146,22 @@ def formatMessage(message):
 		"badge-info": badge_info,
 		"badges": badges, # (only check for listed below)
 		"color": True,
-		"display-name": message["authorDetails"]["displayName"],
+		"display-name": message.author.name,
 		"emotes": True,
 		"first-msg": "0",
 		"flags": True,
-		"id": message["id"].replace(".", ""),
-		"mod": 1 if message["authorDetails"]["isChatModerator"] else 0,
+		"id": message.id.replace(".", ""),
+		"mod": 1 if message.author.isChatModerator else 0,
 		"returning-chatter": "0",
 		"room-id": "133875470", # change?
 		"subscriber": "0", # update for memberships
-		"tmi-sent-ts": message["snippet"]["publishedAt"], # (change to epoch time?)
+		"tmi-sent-ts": message.timestamp,
 		"turbo": "0",
-		"user-id": message["authorDetails"]["channelId"],
+		"user-id": message.author.channelId,
 		"user-type": True # need to implement mod user-type
 	}
 
 	return info
 
-def clearCache():
-	global message_ids
-	message_ids = []
-
 getCredentials()
-youtube = googleapiclient.discovery.build(
-		"youtube", "v3", credentials=credentials)
-updateLiveChatID()
+updateStreamID()

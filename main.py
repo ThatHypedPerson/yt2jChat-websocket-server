@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import asyncio
+import os
 import websockets
 import threading
 import time
@@ -16,11 +17,23 @@ async def handler(client, path):
 	clients.append(client)
 	while True:
 		try:
-			pong_waiter = await client.ping()
-			await pong_waiter
-			time.sleep(3)
-		except Exception as e:
+			message = await client.recv()
+			print("recieved:", message)
+
+			message = message.split()
+			if message[0] == "update":
+				if len(message) > 1: # explicit url given
+					print(message[1])
+					youtube.updateStreamID(message[1])
+				else:
+					youtube.updateStreamID(None) # grab first stream
+			elif message[0] == "reload":
+				youtube.getCredentials() # update .pkl file
+			
+		except Exception as error:
+			print(type(error), str(error))
 			clients.remove(client)
+			print("Websocket Client Disconnected.", client)
 			break
 
 def broadcast(message):
@@ -36,25 +49,23 @@ start_server = websockets.serve(handler, "0.0.0.0", 8765)
 asyncio.get_event_loop().run_until_complete(start_server)
 threading.Thread(target = asyncio.get_event_loop().run_forever).start()
 
-print("Socket Server Running. Starting main loop.")
+print("Started.")
 
-new_id_counter = 0
 while True:
-	time.sleep(45) # "43.2 s/request" if running 24 hours to not reach quota
-	
-	new_id_counter += 1
-	if new_id_counter == 13: # check for new stream ~ every 10 minutes
-		youtube.updateLiveChatID()
-		new_id_counter = 0
-	
-	messages = youtube.getMessages()
-	message_clients = clients.copy()
-	for message in messages:
-		print(message)
-		broadcast(json.dumps(message))
-
-	removed = youtube.getRemoved()
-	for message in removed:
-		print(message)
-		broadcast(json.dumps(message))
-	
+	try:
+		while youtube.chat.is_alive():
+			data = youtube.chat.get()
+			items = data.items
+			for message in items:
+				message_clients = clients.copy()
+				message = youtube.processMessage(message)
+				broadcast(json.dumps(message))
+				print(message["username"] + ":", message["message"]) # console output
+			# check for a new message every second
+			time.sleep(1)
+	except KeyboardInterrupt:
+		os._exit(0)
+		# sys.exit() # doesn't work for some reason
+	except Exception as e:
+		print(type(e), str(e))
+		pass
