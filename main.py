@@ -22,11 +22,13 @@ async def handler(client, path):
 
 			message = message.split()
 			if message[0] == "update":
+				global stored_url
 				if len(message) > 1: # explicit url given
-					print(message[1])
 					youtube.updateStreamID(message[1])
+					stored_url = message[1]
 				else:
 					youtube.updateStreamID(None) # grab first stream
+					stored_url = ""
 			elif message[0] == "reload":
 				youtube.getCredentials() # update .pkl file
 			
@@ -51,8 +53,18 @@ threading.Thread(target = asyncio.get_event_loop().run_forever).start()
 
 print("Started.")
 
+stored_url = ""
+t = time.time()
+
 while True:
 	try:
+		if stored_url:
+			youtube.updateStreamID(stored_url)
+		else:
+			print("checking for new stream")
+			youtube.updateStreamID()
+		
+		# chat seems to go inactive after an hour
 		while youtube.chat.is_alive():
 			data = youtube.chat.get()
 			items = data.items
@@ -63,6 +75,7 @@ while True:
 				print(message["username"] + ":", message["message"]) # console output
 			# check for a new message every second
 			time.sleep(1)
+		# time.sleep(600)
 	except KeyboardInterrupt:
 		os._exit(0)
 		# sys.exit() # doesn't work for some reason

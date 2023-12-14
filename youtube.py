@@ -1,11 +1,11 @@
 import os
-import sys
 from dotenv import load_dotenv
 load_dotenv()
 
 import pytchat
 
 import pickle # store/read credentials
+import pprint
 
 # Google API imports
 import google_auth_oauthlib.flow
@@ -34,6 +34,7 @@ client_secrets_file = "client_secret.json"
 flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
 	client_secrets_file, scopes)
 
+# update to be better
 def getCredentials():
 	global youtubeOAuth
 	try:
@@ -71,8 +72,10 @@ def updateStreamID(url = None):
 		while request is not None:
 			response = request.execute()
 			for item in response["items"]:
-				if item["status"]["lifeCycleStatus"] != "complete": # only look at active/soon to be active streams
-					streams.append(item)
+				# only look at active/soon to be active streams
+				if item["status"]["lifeCycleStatus"] != "complete" \
+					and item["status"]["privacyStatus"] != "private":
+						streams.append(item)
 			request = youtubeOAuth.playlistItems().list_next(request, response)
 		
 		# do nothing when there is no active stream
@@ -83,15 +86,21 @@ def updateStreamID(url = None):
 		for stream in streams:
 			if stream["status"]["lifeCycleStatus"] == "active":
 				streamID = stream['snippet']['thumbnails']['default']['url']
+				title = stream['snippet']['title']
+				print("attempting to update stream to:", title)
 				parseStreamID(streamID)
 				return
 		
 		# get latest stream if none are live
 		streamID = streams[0]['snippet']['thumbnails']['default']['url']
+		title = stream['snippet']['title']
+		print("attempting to update stream to:", title)
 		parseStreamID(streamID)
 	
 	# API Request (only usable by me, the person who made this)
-	except:
+	except Exception as e:
+		print("OAuth failed, resorting to API request.")
+		print(e)
 		# i'm lazy so just get the first result in the "streams" playlist
 		request = youtubeAPI.playlistItems().list(
 			part = "snippet",
@@ -99,7 +108,11 @@ def updateStreamID(url = None):
 			playlistId = "PLAWgoOAOTXvFT_H--Vnu0KrbPEgnpO8QG"
 		)
 		response = request.execute()
+		# will return nothing if first stream is private
+		if response["items"][0]['snippet']['title'] == "Private video": return
 		streamID = response["items"][0]['snippet']['thumbnails']['default']['url']
+		title = response["items"][0]['snippet']['title']
+		print("attempting to update stream to:", title)
 		parseStreamID(streamID)
 
 def parseStreamID(url):
@@ -164,4 +177,8 @@ def formatMessage(message):
 	return info
 
 getCredentials()
-updateStreamID()
+# updateStreamID()
+
+
+# change to latest stream, public or private, if none are live
+# then constantly check if a stream is live to change to it
