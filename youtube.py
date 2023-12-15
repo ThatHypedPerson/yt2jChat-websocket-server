@@ -3,11 +3,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import pytchat
-from urllib.parse import urlparse, parse_qs
-
-import pickle # store/read credentials
 import time # chat update logic
-import pprint
+from urllib.parse import urlparse, parse_qs # parsing user provided urls
 
 # Google API imports
 import google_auth_oauthlib.flow
@@ -56,13 +53,16 @@ def getCredentials():
 
 chat = None
 
-# need to fix: will always default to latest unlisted stream rather than a current stream
+is_alive = False
+last_updated = 0 # used to limit api calls
+last_checked = time.time() # used if stuck on unlisted stream
 def updateChat():
 	global is_alive
 	if is_alive:
-		createChat()
 		is_alive = checkStreamState()
-	elif time.time() - last_updated > 60:
+		if is_alive:
+			createChat()
+	if not is_alive and time.time() - last_updated > 60:
 		print("attempting to find a new stream")
 		updateStreamID()
 		is_alive = checkStreamState()
@@ -73,21 +73,37 @@ def checkStreamState():
 	global stream_id
 	if stream_id is None or stream_id == "":
 		return False
-	request = youtubeOAuth.liveBroadcasts().list(
-		part = "snippet,contentDetails,status",
-		id = stream_id,
-		maxResults = 1
-	)
-	response = request.execute()
-	print("checking status of:", response["items"][0]['snippet']['title'])
-	return response["items"][0]["status"]["lifeCycleStatus"] != "complete" \
-		and response["items"][0]["status"]["privacyStatus"] != "private"
+	try:
+		request = youtubeOAuth.liveBroadcasts().list(
+			part = "snippet,contentDetails,status",
+			id = stream_id,
+			maxResults = 1
+		)
+		response = request.execute()
+		print("checking status of:", response["items"][0]['snippet']['title'])
+
+		# NOT A GOOD SOLUTION
+		# check for new stream every 5 minutes if stored stream is unlisted
+		if response["items"][0]["status"]["privacyStatus"] == "unlisted":
+			global last_checked
+			if time.time() - last_checked >= 300:
+				print("current stream is unlisted, checking for a new stream")
+				last_checked = time.time()
+				updateStreamID()
+
+		return response["items"][0]["status"]["lifeCycleStatus"] != "complete" \
+			and response["items"][0]["status"]["privacyStatus"] != "private"
+	
+	# attempt to refresh OAuth if it fails
+	except google.auth.exceptions.RefreshError:
+		getCredentials()
 
 stream_id = ""
 def updateStreamID(url = None):
 	# skip checking for a new stream when given a url
 	if not url is None:
 		global is_alive
+		global stream_id
 		is_alive = True
 		stream_id = parseStreamID(url)
 	else:
@@ -149,17 +165,17 @@ def parseStreamID(url):
 	elif 'youtu.be' in query.hostname:
 		return query.path[1:]
 
-last_updated = 0
-is_alive = False
 def createChat():
 	global chat
 	global stream_id
 	global last_updated
+	global last_checked
 	if chat:
 		chat.terminate()
 	print("updating chat to:", stream_id)
 	chat = pytchat.create(video_id=stream_id, interruptable=False)
 	last_updated = time.time()
+	last_checked = time.time()
 
 def processMessage(message):
 	# include messageEx to add emotes
