@@ -143,7 +143,7 @@ def getStreamID():
 		
 		# get latest stream if none are live
 		stream_id = streams[0]['snippet']['thumbnails']['default']['url'][23:34]
-		title = stream['snippet']['title']
+		title = streams[0]['snippet']['title']
 		print("updating stored stream to:", title)
 	
 	# attempt to refresh OAuth if it fails

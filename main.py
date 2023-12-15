@@ -26,6 +26,7 @@ async def handler(client, path):
 					youtube.updateStreamID(message[1])
 				else:
 					youtube.updateStreamID(None) # grab first stream
+				youtube.chat.terminate()
 			elif message[0] == "reload":
 				youtube.getCredentials() # update .pkl file
 			
